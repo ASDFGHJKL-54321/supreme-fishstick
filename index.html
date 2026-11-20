@@ -1,0 +1,118 @@
+
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>همسفر | مسیریاب فارسی</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Tahoma,Arial;background:#eef5ff;color:#17365d}
+header{background:#0879d9;color:white;padding:20px;text-align:center}
+header h2{margin:0 0 7px}
+main{padding:15px}
+.panel{background:white;border-radius:15px;padding:15px;margin-bottom:12px;box-shadow:0 2px 9px #ccd9e8}
+input,button,select{width:100%;padding:13px;margin:6px 0;border-radius:10px;font-size:15px}
+input,select{border:1px solid #b8cce0}
+button{border:0;background:#0879d9;color:white;font-weight:bold}
+button.secondary{background:#e5f1ff;color:#075ca8}
+#map{height:48vh;min-height:300px;border-radius:15px}
+#status{text-align:center;font-size:13px;color:#496783}
+</style>
+</head>
+<body>
+<header>
+<h2>🚗 همسفر</h2>
+راهنمای هوشمند سفر شما
+</header>
+<main>
+<div class="panel">
+<input id="destination" placeholder="مقصد خود را وارد کنید">
+<button onclick="searchDestination()">🔍 جستجوی مقصد</button>
+<button class="secondary" onclick="myLocation()">📍 موقعیت فعلی من</button>
+<button onclick="speakRoute()">🔊 راهنمای صوتی</button>
+<select id="voice">
+<option value="female">صدای زن</option>
+<option value="male">صدای مرد</option>
+</select>
+<p id="status">برای شروع، موقعیت خود را مشخص کنید.</p>
+</div>
+<div id="map"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map').setView([32.0,53.0],5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'© OpenStreetMap'
+}).addTo(map);
+
+let current=null;
+let destination=null;
+let routeLayer=null;
+
+function status(t){
+document.getElementById('status').textContent=t;
+}
+
+function myLocation(){
+if(!navigator.geolocation){
+status('موقعیت‌یابی در دسترس نیست');
+return;
+}
+status('در حال دریافت موقعیت شما...');
+navigator.geolocation.getCurrentPosition(p=>{
+current=[p.coords.latitude,p.coords.longitude];
+map.setView(current,15);
+L.marker(current).addTo(map).bindPopup('موقعیت شما').openPopup();
+status('موقعیت شما مشخص شد.');
+},()=>status('دسترسی موقعیت را فعال کنید.'),{enableHighAccuracy:true});
+}
+
+async function searchDestination(){
+const q=document.getElementById('destination').value.trim();
+if(!q)return status('لطفاً نام مقصد را وارد کنید.');
+status('در حال جستجوی مقصد...');
+try{
+const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));
+const d=await r.json();
+if(!d.length)return status('مقصد پیدا نشد.');
+destination=[Number(d[0].lat),Number(d[0].lon)];
+map.setView(destination,13);
+L.marker(destination).addTo(map).bindPopup(q).openPopup();
+status('مقصد پیدا شد.');
+if(current)await makeRoute();
+}catch(e){status('خطا در جستجو. دوباره تلاش کنید.');}
+}
+
+async function makeRoute(){
+try{
+const url=`https://router.project-osrm.org/route/v1/driving/${current[1]},${current[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson`;
+const r=await fetch(url);
+const d=await r.json();
+if(!d.routes || !d.routes.length)return status('مسیر پیدا نشد.');
+if(routeLayer)map.removeLayer(routeLayer);
+routeLayer=L.geoJSON(d.routes[0].geometry,{
+style:{color:'#0879d9',weight:6}
+}).addTo(map);
+map.fitBounds(routeLayer.getBounds());
+const km=(d.routes[0].distance/1000).toFixed(1);
+const min=Math.round(d.routes[0].duration/60);
+status('مسافت: '+km+' کیلومتر | زمان تقریبی: '+min+' دقیقه');
+}catch(e){status('محاسبه مسیر ناموفق بود.');}
+}
+
+function speakRoute(){
+const msg=document.getElementById('status').textContent;
+if(!('speechSynthesis' in window))return status('راهنمای صوتی پشتیبانی نمی‌شود.');
+const u=new SpeechSynthesisUtterance(msg);
+u.lang='fa-IR';
+u.rate=0.9;
+const voices=speechSynthesis.getVoices().filter(v=>v.lang.startsWith('fa'));
+if(voices.length)u.voice=voices[0];
+speechSynthesis.cancel();
+speechSynthesis.speak(u);
+}
+</script>
+</body>
+</html>
